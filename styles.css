@@ -1,17 +1,12 @@
-/* ======================= */
-/* Scrollbar chỉ áp dụng cho popup emoji */
+/* Scrollbar only for the injected emoji panel */
 .react-container .emoji-group::-webkit-scrollbar {
-    width: 0px;
+    width: 0;
 }
 
-/* ======================= */
-/* Container chính */
 .react-container {
     position: relative;
 }
 
-/* ======================= */
-/* Nút React "MORE" */
 .react-container .btn-react {
     position: absolute;
     bottom: 5px;
@@ -22,8 +17,8 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    border-radius: 100%;
-    font-weight: bold;
+    border-radius: 999px;
+    font-weight: 700;
     cursor: pointer;
     transition: transform 0.2s ease-in-out;
     animation: slideUp 0.5s ease-out forwards;
@@ -37,7 +32,6 @@
     pointer-events: auto;
 }
 
-/* Hiệu ứng nút More trượt lên */
 .btn-react.slide-in {
     animation: slideInFromBottom 0.6s ease-out forwards;
 }
@@ -53,8 +47,6 @@
     }
 }
 
-/* ======================= */
-/* Nút thay nền & reset nền */
 .react-container .btn-bg,
 .react-container .btn-reset {
     position: absolute;
@@ -65,14 +57,14 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    border-radius: 100%;
-    font-weight: bold;
+    border-radius: 999px;
+    font-weight: 700;
     cursor: pointer;
-    box-shadow: 0 6px 12px rgba(0,0,0,0.12);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12);
     border: none;
     transform: translateX(0) scale(0);
     opacity: 0;
-    transition: transform 280ms cubic-bezier(.2,.9,.2,1), opacity 200ms;
+    transition: transform 280ms cubic-bezier(.2, .9, .2, 1), opacity 200ms;
     pointer-events: none;
     user-select: none;
 }
@@ -86,8 +78,13 @@
     pointer-events: none;
 }
 
-.react-container .btn-bg { left: 1px; }
-.react-container .btn-reset { left: 1px; }
+.react-container .btn-bg {
+    left: 1px;
+}
+
+.react-container .btn-reset {
+    left: 1px;
+}
 
 .react-container.react-container--expanded .btn-bg {
     transform: translateX(43px) scale(1);
@@ -104,43 +101,36 @@
 }
 
 .react-container.react-container--expanded .btn-bg:hover {
-    transform: translateX(43px) scale(1.2);   /* giữ vị trí dịch + phóng to */
+    transform: translateX(43px) scale(1.2);
     opacity: 1;
     transition-delay: 50ms;
     pointer-events: auto;
 }
 
 .react-container.react-container--expanded .btn-reset:hover {
-    transform: translateX(86px) scale(1.2);   /* giữ vị trí dịch + phóng to */
+    transform: translateX(86px) scale(1.2);
     opacity: 1;
     transition-delay: 50ms;
     pointer-events: auto;
 }
 
 .react-container .btn-icon {
-    display: flex;            
-    justify-content: center;  
-    align-items: center;      
-    width: 100%;              
-    height: 100%;             
-    font-size: 17px;          /* kích thước icon */
-    line-height: 1;           
-    pointer-events: none;     
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    font-size: 17px;
+    line-height: 1;
+    pointer-events: none;
 }
 
-@keyframes buttonHover   {
-    0% { transform: scale(1); }
-    100% { transform: scale(1.2); }
-}
-
-/* ======================= */
-/* Popup emoji */
 .react-container .emoji-group {
     position: absolute;
-    bottom: 70px;
-    right: 0;
-    width: 320px;
-    height: 320px;
+    bottom: 52px;
+    left: -320px;
+    width: 300px;
+    height: 300px;
     padding: 15px;
     list-style: none;
     margin: 0;
@@ -148,21 +138,17 @@
     flex-flow: row wrap;
     justify-content: space-between;
     overflow-y: auto;
-    backdrop-filter: blur(8px);              /* nền mờ */
-    background-color: rgba(255, 255, 255, .75); /* nền trắng mờ */
-    border-radius: 18px;                    /* bo tròn mềm hơn */
-    box-shadow: 0 10px 25px rgba(0,0,0,0.18); /* bóng đổ đẹp hơn */
+    backdrop-filter: blur(8px);
+    background-color: rgba(255, 255, 255, 0.75);
+    border-radius: 18px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18);
     opacity: 0;
-    transform: scale(0) translate(22px, 22px);
-    transform-origin: bottom right;
-    transition:
-        opacity 0.25s ease-out,
-        transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    transform: translate(18px, 24px) scale(0.12);
+    transform-origin: calc(100% - 10px) calc(100% + 18px);
+    transition: opacity 0.25s ease-out, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform, opacity;
     pointer-events: none;
-    user-select: none; /*chặn bôi đen
-
-    /* Hỗ trợ nền tùy chỉnh */
+    user-select: none;
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
@@ -170,12 +156,10 @@
 
 .react-container .emoji-group--show {
     opacity: 1;
-    transform: scale(1) translate(0, 0);
+    transform: translate(0, 0) scale(1);
     pointer-events: auto;
 }
 
-/* ======================= */
-/* Emoji */
 .react-container .emoji {
     height: 50px;
     width: 50px;
@@ -185,15 +169,8 @@
     font-size: 28px;
     cursor: pointer;
     border-radius: 10px;
-    transition:
-        transform .18s ease-out,
-        background-color .18s ease-out,
-        box-shadow .18s ease-out;
+    transition: transform .18s ease-out, background-color .18s ease-out, box-shadow .18s ease-out;
     user-select: none;
-}
-
-.react-container .emoji {
-    transition: transform .18s, background-color .18s, box-shadow .18s;
 }
 
 .react-container .emoji:hover {
@@ -204,26 +181,29 @@
 }
 
 @keyframes bounceEmoji {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.35); }
-    100% { transform: scale(1.28); }
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.35);
+    }
+    100% {
+        transform: scale(1.28);
+    }
 }
 
-/* ===================== */
-/* DARK MODE cho extension */
-/* ===================== */
 @media (prefers-color-scheme: dark) {
     .react-container .btn-react,
     .react-container .btn-bg,
     .react-container .btn-reset {
         background-color: #2e2e2e;
         color: #ffffff;
-        box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
     }
 
     .react-container .emoji-group {
         background-color: rgba(40, 40, 40, 0.85);
-        box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
         backdrop-filter: blur(10px);
     }
 
@@ -233,9 +213,6 @@
     }
 }
 
-/* ===================== */
-/* DARK MODE theo Facebook */
-/* ===================== */
 html[class*="dark"] .react-container .btn-react,
 html[class*="dark"] .react-container .btn-bg,
 html[class*="dark"] .react-container .btn-reset {
@@ -245,7 +222,7 @@ html[class*="dark"] .react-container .btn-reset {
 
 html[class*="dark"] .react-container .emoji-group {
     background-color: rgba(40, 40, 40, 0.9);
-    box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
 }
 
 html[class*="dark"] .react-container .emoji {
