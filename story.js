@@ -1,112 +1,101 @@
 const STORY_URL_PREFIX = "https://www.facebook.com/stories/";
 const TARGET_SELECTOR = ".x11lhmoz.x78zum5.x1q0g3np.xsdox4t.xbudbmw.x10l6tqk.xwa60dl.xl56j7k.xtuxyv6";
 
-// --- KHỐI LẮNG NGHE LỆNH (MESSAGE LISTENER) ---
-// Biến này để lưu trạng thái bật/tắt (nếu bạn chưa khai báo thì dòng này rất quan trọng)
-if (typeof isUIEnabled === 'undefined') var isUIEnabled = true;
-
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log("🔔 Story.js nhận lệnh:", msg.action);
-
-  // Xử lý 1: Lệnh thả tim từ Popup
-  if (msg.action === 'TRIGGER_REACTION') {
-    const storyId = getStoryId();
-    const fb_dtsg = getFbdtsg();
-    const user_id = getUserId();
-
-    if (storyId && fb_dtsg && user_id) {
-      reactStory(user_id, fb_dtsg, storyId, msg.payload)
-        .then(res => {
-          console.log("✅ Đã thả tim:", msg.payload);
-          sendResponse({ status: 'success' });
-        })
-        .catch(err => {
-          console.error("❌ Lỗi:", err);
-          sendResponse({ status: 'error', message: JSON.stringify(err) });
-        });
-    } else {
-      console.warn("⚠️ Thiếu thông tin (ID/Token) để thả tim.");
-      sendResponse({ status: 'error', message: "Không tìm thấy Story ID" });
-    }
-  }
-
-  // Xử lý 2: Lệnh Bật/Tắt nút tròn
-  else if (msg.action === 'TOGGLE_UI') {
-    isUIEnabled = msg.payload;
-    if (isUIEnabled) {
-      console.log("🟢 Đã bật giao diện");
-      if (location.href.includes("facebook.com/stories")) init();
-    } else {
-      console.log("🔴 Đã tắt giao diện");
-      stopDomObserver(); // Hàm xóa nút cũ của bạn
-      if (typeof reactContainer !== 'undefined' && reactContainer) reactContainer.remove();
-    }
-    sendResponse({ status: 'ok' });
-  }
-
-  return true; // BẮT BUỘC: Dòng này giữ kết nối để chờ hàm async (reactStory) trả về kết quả
-});
-// -------------------------------------------------
-
+let isUIEnabled = true;
 let reactContainer = null;
 let domObserver = null;
-let lastInjectedTarget = null;
 let currentUrl = location.href;
 let pollingIntervalId = null;
 let historyPatched = false;
 let lastStoryId = null;
-console.log("🔍 Khởi tạo thành công — URL:", currentUrl);
+let cachedDtsg = null;
+
+chrome.storage.local.get({ showInPageUI: true }, (data) => {
+  isUIEnabled = Boolean(data.showInPageUI);
+  startUrlObserver();
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === "PING") {
+    sendResponse({ status: "ok" });
+    return false;
+  }
+
+  if (msg.action === "GET_PAGE_CONTEXT") {
+    sendResponse({
+      status: "ok",
+      theme: isDarkMode() ? "dark" : "light"
+    });
+    return false;
+  }
+
+  if (msg.action === "TRIGGER_REACTION") {
+    handleReactionRequest(msg.payload, sendResponse);
+    return true;
+  }
+
+  if (msg.action === "TOGGLE_UI") {
+    isUIEnabled = Boolean(msg.payload);
+
+    if (isUIEnabled) {
+      if (location.href.startsWith(STORY_URL_PREFIX)) {
+        init();
+      }
+    } else {
+      stopDomObserver();
+      if (reactContainer?.isConnected) {
+        reactContainer.remove();
+      }
+    }
+
+    sendResponse({ status: "ok" });
+    return false;
+  }
+
+  return false;
+});
+
+function handleReactionRequest(emoji, sendResponse) {
+  const storyId = getStoryId();
+  const fbDtsg = getFbdtsg();
+  const userId = getUserId();
+
+  if (!storyId || !fbDtsg || !userId) {
+    sendResponse({
+      status: "error",
+      message: "Không tìm thấy dữ liệu story hiện tại. Hãy tải lại trang story rồi thử lại."
+    });
+    return;
+  }
+
+  reactStory(userId, fbDtsg, storyId, emoji)
+    .then(() => sendResponse({ status: "success" }))
+    .catch((error) => {
+      sendResponse({
+        status: "error",
+        message: getReadableError(error)
+      });
+    });
+}
 
 function startUrlObserver() {
-  const handleUrlChange = () => {
-    console.log("🌐 URL đã bị thay đổi hiện tại là:", currentUrl);
-    if (currentUrl.startsWith(STORY_URL_PREFIX)) {
-      if (isUIEnabled) init(); 
-    }
-    else {
-      console.log("⛔ Đã rời khỏi trang Stories");
-      stopDomObserver();
-    }
-  };
-
   if (!historyPatched) {
     const originalPush = history.pushState;
     const originalReplace = history.replaceState;
+
     history.pushState = function (...args) {
       const result = originalPush.apply(this, args);
-      setTimeout(() => {
-        const newUrl = location.href;
-        if (newUrl !== currentUrl) {
-          currentUrl = newUrl;
-          handleUrlChange();
-        }
-      }, 0
-      );
+      queueUrlCheck();
       return result;
     };
 
     history.replaceState = function (...args) {
       const result = originalReplace.apply(this, args);
-      setTimeout(() => {
-        const newUrl = location.href;
-        if (newUrl !== currentUrl) {
-          currentUrl = newUrl;
-          handleUrlChange();
-        }
-      }, 0);
+      queueUrlCheck();
       return result;
     };
 
-    window.addEventListener("popstate", () => {
-      setTimeout(() => {
-        const newUrl = location.href;
-        if (newUrl !== currentUrl) {
-          currentUrl = newUrl;
-          handleUrlChange();
-        }
-      }, 0);
-    }
-    );
+    window.addEventListener("popstate", queueUrlCheck);
     historyPatched = true;
   }
 
@@ -116,165 +105,159 @@ function startUrlObserver() {
         currentUrl = location.href;
         handleUrlChange();
       }
-    }, 500
-    );
+    }, 500);
   }
 
-  if (currentUrl.startsWith(STORY_URL_PREFIX)) {
-    init();
-  } 
-  else {}
+  handleUrlChange();
 }
 
-function stopUrlObserver() {
-  if (pollingIntervalId) {
-    clearInterval(pollingIntervalId);
-    pollingIntervalId = null;
-    console.log("🛑 Cơ chế dự phòng bằng polling đã dừng.");
+function queueUrlCheck() {
+  setTimeout(() => {
+    if (location.href !== currentUrl) {
+      currentUrl = location.href;
+      handleUrlChange();
+    }
+  }, 0);
+}
+
+function handleUrlChange() {
+  if (!currentUrl.startsWith(STORY_URL_PREFIX)) {
+    stopDomObserver();
+    return;
+  }
+
+  if (isUIEnabled) {
+    init();
   }
 }
 
 async function init() {
   if (domObserver) {
-    console.log("ℹ️ DOM Observer đang chạy.");
     return;
   }
 
   try {
-    const emojiUrl = typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL? chrome.runtime.getURL("db/emoji.json"): "db/emoji.json";
-    const emojiJson = await fetch(emojiUrl);
-    const EMOJI_LIST = await emojiJson.json();
+    const emojiUrl = chrome.runtime.getURL("db/emoji.json");
+    const response = await fetch(emojiUrl);
+    const emojiList = await response.json();
+
     if (!reactContainer) {
-      createReactContainer(EMOJI_LIST);
-      const btn = reactContainer.querySelector(".btn-react");
-      if (btn) {
-        btn.classList.add("slide-in");
-        setTimeout(() => {
-          btn.classList.remove("slide-in");
-        }, 700
-        );
+      createReactContainer(emojiList);
+      const button = reactContainer.querySelector(".btn-react");
+      if (button) {
+        button.classList.add("slide-in");
+        setTimeout(() => button.classList.remove("slide-in"), 700);
       }
     }
-    startDomObserver();
-  } 
 
-  catch (e) {
-    console.error("❌ Lỗi load emoji.json:", e);
+    startDomObserver();
+  } catch (error) {
+    console.error("Failed to initialize story controls:", error);
   }
 }
 
-function createReactContainer(EMOJI_LIST) {
+function createReactContainer(emojiList) {
   reactContainer = document.createElement("div");
   reactContainer.className = "react-container";
+
   const btnReact = document.createElement("div");
   btnReact.className = "btn-react";
   btnReact.textContent = "MORE";
-  const emojiGroup = document.createElement("ul");
-  emojiGroup.className = "emoji-group";
-  emojiGroup.addEventListener("wheel", (e) => {
-    e.stopPropagation();
-  }, { passive: true });
-  const savedBg = localStorage.getItem("emojiPopupBg");
-
-  if (savedBg) {
-    emojiGroup.style.backgroundImage = `url(${savedBg})`;
-    emojiGroup.style.backgroundSize = "cover";
-    emojiGroup.style.backgroundPosition = "center";
-    emojiGroup.style.backgroundColor = "transparent";
-  }
 
   const btnChangeBg = document.createElement("button");
   btnChangeBg.className = "btn-bg";
+  btnChangeBg.type = "button";
   btnChangeBg.innerHTML = "<span class='btn-icon'>🖼️</span>";
+
   const btnResetBg = document.createElement("button");
   btnResetBg.className = "btn-reset";
-  btnResetBg.innerHTML = "<span class='btn-icon'>♻️</span>";
+  btnResetBg.type = "button";
+  btnResetBg.innerHTML = "<span class='btn-icon'>↻</span>";
+
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*";
   fileInput.style.display = "none";
 
-  fileInput.onchange = (ev) => {
-    const file = ev.target.files?.[0];
-    if (!file) return;
+  const emojiGroup = document.createElement("ul");
+  emojiGroup.className = "emoji-group";
+  emojiGroup.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
+
+  restoreSavedBackground(emojiGroup);
+
+  fileInput.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       emojiGroup.style.backgroundImage = `url(${reader.result})`;
       emojiGroup.style.backgroundSize = "cover";
       emojiGroup.style.backgroundPosition = "center";
       emojiGroup.style.backgroundColor = "transparent";
-      localStorage.setItem("emojiPopupBg", reader.result);
-      console.log("🖼️ Đã thay ảnh nền.");
+      localStorage.setItem("emojiPopupBg", String(reader.result));
     };
     reader.readAsDataURL(file);
-  };
+  });
 
-  btnChangeBg.onclick = (e) => {
-    console.log("🖼️ Đang chọn hình nền ...")
-    e.stopPropagation();
+  btnChangeBg.addEventListener("click", (event) => {
+    event.stopPropagation();
     fileInput.click();
-  };
+  });
 
-  btnResetBg.onclick = () => {
+  btnResetBg.addEventListener("click", (event) => {
+    event.stopPropagation();
     emojiGroup.style.backgroundImage = "none";
     emojiGroup.style.backgroundColor = isDarkMode() ? "rgba(40,40,40,0.9)" : "rgba(255,255,255,0.75)";
     localStorage.removeItem("emojiPopupBg");
-    console.log("🔃 Nền đã reset.");
-  };
+  });
 
-  btnReact.onclick = () => {
-  const visible = emojiGroup.classList.toggle("emoji-group--show");
-  reactContainer.classList.toggle("react-container--expanded", visible);
+  btnReact.addEventListener("click", () => {
+    const visible = emojiGroup.classList.toggle("emoji-group--show");
+    reactContainer.classList.toggle("react-container--expanded", visible);
+    setActionButtonsState(btnChangeBg, btnResetBg, !visible);
 
-  // 🔒 KHÓA 2 NÚT NGAY LẬP TỨC
-  btnChangeBg.disabled = true;
-  btnResetBg.disabled = true;
-  btnChangeBg.style.pointerEvents = "none";
-  btnResetBg.style.pointerEvents = "none";
+    if (visible) {
+      const onDone = (event) => {
+        if (event.target !== btnResetBg) {
+          return;
+        }
+        setActionButtonsState(btnChangeBg, btnResetBg, false);
+        btnResetBg.removeEventListener("transitionend", onDone);
+      };
 
-  if (visible) {
-    // ✅ CHỜ animation chạy xong mới mở
-    const onDone = (e) => {
-      if (e.target !== btnResetBg) return;
-      btnChangeBg.disabled = false;
-      btnResetBg.disabled = false;
-      btnChangeBg.style.pointerEvents = "auto";
-      btnResetBg.style.pointerEvents = "auto";
-      btnResetBg.removeEventListener("transitionend", onDone);
-    };
-    
-    btnResetBg.addEventListener("transitionend", onDone);
-  }
-  };
+      btnResetBg.addEventListener("transitionend", onDone);
+    }
+  });
 
-  EMOJI_LIST.forEach((emoji) => {
-    const li = document.createElement("li");
-    li.className = "emoji";
-    li.textContent = emoji.value;
-    li.onclick = async () => {
+  emojiList.forEach((emoji) => {
+    const item = document.createElement("li");
+    item.className = "emoji";
+    item.textContent = emoji.value;
+    item.addEventListener("click", async () => {
       const storyId = getStoryId();
-      const fb_dtsg = getFbdtsg();
-      const user_id = getUserId();
-      if (!storyId || !fb_dtsg || !user_id) {
-        console.log("⚠️ Thiếu dữ liệu để gửi reaction.");
+      const fbDtsg = getFbdtsg();
+      const userId = getUserId();
+
+      if (!storyId || !fbDtsg || !userId) {
         return;
       }
-      try {
-        await reactStory(user_id, fb_dtsg, storyId, emoji.value);
-        console.log(`${storyId} : ${emoji.value}`);
-      } 
-      catch (e) {
-        console.error(e);
-      }
-    };
-    emojiGroup.appendChild(li);
-  }
-  );
 
-  document.addEventListener("contextmenu", function (e) {
-    if (reactContainer && reactContainer.contains(e.target)) {
-      e.preventDefault();
-      e.stopPropagation();
+      try {
+        await reactStory(userId, fbDtsg, storyId, emoji.value);
+      } catch (error) {
+        console.error("Failed to send reaction from inline panel:", error);
+      }
+    });
+    emojiGroup.appendChild(item);
+  });
+
+  document.addEventListener("contextmenu", (event) => {
+    if (reactContainer?.contains(event.target)) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   }, true);
 
@@ -285,49 +268,43 @@ function createReactContainer(EMOJI_LIST) {
   reactContainer.appendChild(emojiGroup);
 
   reactContainer.addEventListener("mouseenter", () => {
-    document.querySelectorAll("video").forEach(v => v.pause());
+    document.querySelectorAll("video").forEach((video) => video.pause());
   });
 
   reactContainer.addEventListener("mouseleave", () => {
-    document.querySelectorAll("video").forEach(v => v.play());
+    document.querySelectorAll("video").forEach((video) => video.play());
   });
 }
 
 function startDomObserver() {
   const tryInject = () => {
-    const currentStoryId = getStoryId();
+    if (!reactContainer) {
+      return;
+    }
 
-    // 🔥 PHÁT HIỆN ĐỔI VIDEO
+    const currentStoryId = getStoryId();
     if (currentStoryId && currentStoryId !== lastStoryId) {
-      // 🧹 GỠ NÚT MORE
-      if (reactContainer?.isConnected) {
+      if (reactContainer.isConnected) {
         reactContainer.remove();
       }
-      lastInjectedTarget = null;
       lastStoryId = currentStoryId;
     }
 
-    // 🔴 selector chính
     const primaryTarget = document.querySelector(TARGET_SELECTOR);
+    const target = primaryTarget || document.querySelector(".YOUR_FALLBACK_SELECTOR");
+    if (!target || reactContainer.isConnected) {
+      return;
+    }
 
-    // 🟡 selector dự phòng (đổi selector nếu bạn có)
-    const fallbackTarget = document.querySelector(".YOUR_FALLBACK_SELECTOR");
-
-    const target = primaryTarget || fallbackTarget;
-    if (!target) return;
-
-    // 🔁 INJECT LẠI TỪ ĐẦU
-    if (!reactContainer.isConnected) {
-      try {
-        target.appendChild(reactContainer);
-        lastInjectedTarget = target;
-      } catch (e) {}
+    try {
+      target.appendChild(reactContainer);
+    } catch (error) {
+      console.error("Failed to inject story controls:", error);
     }
   };
+
   tryInject();
-  domObserver = new MutationObserver(() => {
-    tryInject();
-  });
+  domObserver = new MutationObserver(tryInject);
 
   const observeTarget = document.body || document.documentElement;
   if (observeTarget) {
@@ -342,73 +319,109 @@ function stopDomObserver() {
   if (domObserver) {
     try {
       domObserver.disconnect();
-    } 
-    catch (e) {
-      console.warn("⚠️ Lỗi khi disconnect DOM observer:", e);
+    } catch (error) {
+      console.warn("Failed to disconnect DOM observer:", error);
     }
     domObserver = null;
-    lastInjectedTarget = null;
   }
-  try {
-    if (reactContainer && reactContainer.parentNode) {
-      reactContainer.parentNode.removeChild(reactContainer);
-      //console.log("🗑️ React container removed from DOM.");
-    }
-  } 
-  catch (e) {}
+
+  if (reactContainer?.parentNode) {
+    reactContainer.parentNode.removeChild(reactContainer);
+  }
+}
+
+function setActionButtonsState(btnChangeBg, btnResetBg, disabled) {
+  btnChangeBg.disabled = disabled;
+  btnResetBg.disabled = disabled;
+  btnChangeBg.style.pointerEvents = disabled ? "none" : "auto";
+  btnResetBg.style.pointerEvents = disabled ? "none" : "auto";
+}
+
+function restoreSavedBackground(emojiGroup) {
+  const savedBg = localStorage.getItem("emojiPopupBg");
+  if (!savedBg) {
+    return;
+  }
+
+  emojiGroup.style.backgroundImage = `url(${savedBg})`;
+  emojiGroup.style.backgroundSize = "cover";
+  emojiGroup.style.backgroundPosition = "center";
+  emojiGroup.style.backgroundColor = "transparent";
 }
 
 function getStoryId() {
-  const el = document.getElementsByClassName("xh8yej3 x1n2onr6 xl56j7k x5yr21d x78zum5 x6s0dn4");
-  return el.length ? el[el.length - 1].getAttribute("data-id") : null;
+  const elements = document.getElementsByClassName("xh8yej3 x1n2onr6 xl56j7k x5yr21d x78zum5 x6s0dn4");
+  return elements.length ? elements[elements.length - 1].getAttribute("data-id") : null;
 }
 
-let cachedDtsg = null;
 function getFbdtsg() {
-  if (cachedDtsg) return cachedDtsg;
-  const m = /"DTSGInitialData".+?"token":"(.+?)"/.exec(document.documentElement.innerHTML);
-  return (cachedDtsg = m?.[1] || null);
+  if (cachedDtsg) {
+    return cachedDtsg;
+  }
+
+  const match = /"DTSGInitialData".+?"token":"(.+?)"/.exec(document.documentElement.innerHTML);
+  cachedDtsg = match?.[1] || null;
+  return cachedDtsg;
 }
 
 function getUserId() {
-  const m = /c_user=(\d+);/gm.exec(document.cookie);
-  return m ? m[1] : null;
+  const match = /c_user=(\d+);/gm.exec(document.cookie);
+  return match ? match[1] : null;
 }
 
-async function reactStory(user_id, fb_dtsg, story_id, message) {
+async function reactStory(userId, fbDtsg, storyId, emoji) {
   const variables = {
     input: {
       lightweight_reaction_actions: {
         offsets: [0],
-        reaction: message
+        reaction: emoji
       },
-      story_id,
+      story_id: storyId,
       story_reply_type: "LIGHT_WEIGHT",
-      actor_id: user_id,
+      actor_id: userId,
       client_mutation_id: 7
     }
   };
 
   const body = new URLSearchParams();
-  body.append("av", user_id);
-  body.append("__user", user_id);
+  body.append("av", userId);
+  body.append("__user", userId);
   body.append("__a", 1);
-  body.append("fb_dtsg", fb_dtsg);
+  body.append("fb_dtsg", fbDtsg);
   body.append("fb_api_caller_class", "RelayModern");
   body.append("fb_api_req_friendly_name", "useStoriesSendReplyMutation");
   body.append("variables", JSON.stringify(variables));
   body.append("server_timestamps", true);
   body.append("doc_id", "3769885849805751");
 
-  const res = await fetch("https://www.facebook.com/api/graphql/", {
+  const response = await fetch("https://www.facebook.com/api/graphql/", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body
   });
 
-  const json = await res.json();
-  if (json.errors) throw json.errors;
+  const json = await response.json();
+  if (json.errors) {
+    throw json.errors;
+  }
+
   return json;
+}
+
+function getReadableError(error) {
+  if (Array.isArray(error) && error[0]?.message) {
+    return error[0].message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch (serializationError) {
+    return "Không thể gửi reaction.";
+  }
 }
 
 function isDarkMode() {
@@ -419,5 +432,3 @@ function isDarkMode() {
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
 }
-
-startUrlObserver();
