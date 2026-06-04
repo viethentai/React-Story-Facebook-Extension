@@ -6,4 +6,4 @@ Download and extract the extension. Navigate to **chrome://extensions/** and tur
 
 ## Screenshot
 
-![]([https://i.imgur.com/5QIHXp0.png](https://i.pinimg.com/1200x/f4/82/dc/f482dc742008bef770d7930501e4e975.jpg))
+![](https://i.pinimg.com/1200x/f4/82/dc/f482dc742008bef770d7930501e4e975.jpg)
