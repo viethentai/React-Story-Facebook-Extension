@@ -2,19 +2,21 @@
   "manifest_version": 3,
   "name": "React Story Facebook (Hybrid)",
   "description": "Thả biểu cảm theo ý muốn của bạn",
-  "version": "6.3.0",
-  
-   "icons": {
+  "version": "6.8.1",
+  "icons": {
     "16": "icon/icon16.png",
     "48": "icon/icon48.png",
     "128": "icon/icon128.png"
   },
-
   "action": {
     "default_popup": "popup.html",
-    "default_icon": { "16": "icon/icon16.png", "48": "icon/icon48.png", "128": "icon/icon128.png" }
+    "default_icon": {
+      "16": "icon/icon16.png",
+      "48": "icon/icon48.png",
+      "128": "icon/icon128.png"
+    }
   },
-  "permissions": ["activeTab", "scripting", "storage"], 
+  "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://www.facebook.com/*"],
   "content_scripts": [
     {
